@@ -20,6 +20,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.LayerDrawable;
 import android.os.Build;
+import android.os.SystemClock;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.SpannableStringBuilder;
@@ -35,6 +36,8 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputConnectionWrapper;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 
@@ -83,6 +86,8 @@ public class ReactEditText extends EditText {
   private @Nullable ScrollWatcher mScrollWatcher;
   private final InternalKeyListener mKeyListener;
   private boolean mDetectScrollMovement = false;
+  private CharSequence mPreviousText;
+  private BackspaceWatcher mBackspaceWatcher;
 
   private ReactViewBackgroundDrawable mReactBackgroundDrawable;
 
@@ -108,6 +113,7 @@ public class ReactEditText extends EditText {
     mStagedInputType = getInputType();
     mKeyListener = new InternalKeyListener();
     mScrollWatcher = null;
+    mPreviousText = "";
   }
 
   // After the text changes inside an EditText, TextView checks if a layout() has been requested.
@@ -608,6 +614,18 @@ public class ReactEditText extends EditText {
     return mReactBackgroundDrawable;
   }
 
+  @Override
+  public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+    return new BackspaceInputConnectionWrapper(super.onCreateInputConnection(outAttrs), true);
+  }
+
+  /**
+   * Callback trigger when the callback function is pressed
+   */
+  public void setBackspaceWatcher(BackspaceWatcher backspaceWatcher) {
+    mBackspaceWatcher = backspaceWatcher;
+  }
+
   /**
    * This class will redirect *TextChanged calls to the listeners only in the case where the text
    * is changed by the user, and not explicitly set by JS.
@@ -615,6 +633,7 @@ public class ReactEditText extends EditText {
   private class TextWatcherDelegator implements TextWatcher {
     @Override
     public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+      mPreviousText = s;
       if (!mIsSettingTextFromJS && mListeners != null) {
         for (TextWatcher listener : mListeners) {
           listener.beforeTextChanged(s, start, count, after);
@@ -691,6 +710,54 @@ public class ReactEditText extends EditText {
     @Override
     public void clearMetaKeyState(View view, Editable content, int states) {
       sKeyListener.clearMetaKeyState(view, content, states);
+    }
+  }
+
+  /**
+   * Wrapper for the InputConnection object
+   * It overrides only the deleteSurroundingText and sendKeyEvent. The backspace
+   * key will be intercept when the EditText is empty and trigger a callback
+   */
+  private class BackspaceInputConnectionWrapper extends InputConnectionWrapper {
+
+    public BackspaceInputConnectionWrapper(InputConnection target, boolean mutable) {
+      super(target, mutable);
+    }
+
+    // In some versions and emulators the backspace is send as deleteSurroundingText(1, 0)
+    @Override
+    public boolean deleteSurroundingText(int beforeLength, int afterLength) {
+      if (beforeLength == 1 && afterLength == 0) {
+        sendDownAndUpKeyEventForCompatibility(KeyEvent.KEYCODE_DEL);
+        return true;
+      }
+      return super.deleteSurroundingText(beforeLength, afterLength);
+    }
+
+    private void sendDownAndUpKeyEventForCompatibility(final int code) {
+      final long eventTime = SystemClock.uptimeMillis();
+      // Send down event first
+      sendKeyEvent(new KeyEvent(eventTime, eventTime,
+        KeyEvent.ACTION_DOWN, code, 0));
+      // Send up event with some milliseconds of difference
+      sendKeyEvent(new KeyEvent(SystemClock.uptimeMillis(),
+        eventTime, KeyEvent.ACTION_UP, code, 0));
+    }
+
+    @Override
+    public boolean sendKeyEvent(KeyEvent event) {
+      /* Get only the up event for avoiding calling multiple times to the callback
+      ** check the length of the text before change to trigger the event only when the field is empty
+      ** If not is empty it will be trigger in the text watcher
+      */
+      if (event.getKeyCode() == KeyEvent.KEYCODE_DEL
+        && event.getAction() == KeyEvent.ACTION_UP
+        && mBackspaceWatcher != null
+        && mPreviousText.length() == 0) {
+          mBackspaceWatcher.onBackspace();
+      }
+
+      return super.sendKeyEvent(event);
     }
   }
 }
