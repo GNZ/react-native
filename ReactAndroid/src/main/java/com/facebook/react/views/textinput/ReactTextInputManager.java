@@ -600,12 +600,15 @@ public class ReactTextInputManager extends BaseViewManager<ReactEditText, Layout
     private EventDispatcher mEventDispatcher;
     private ReactEditText mEditText;
     private String mPreviousText;
+    private ReactBackspaceWatcher mReactBackspaceWatcher;
 
     public ReactTextInputTextWatcher(
         final ReactContext reactContext,
-        final ReactEditText editText) {
+        final ReactEditText editText,
+        final ReactBackspaceWatcher reactBackspaceWatcher) {
       mEventDispatcher = reactContext.getNativeModule(UIManagerModule.class).getEventDispatcher();
       mEditText = editText;
+      mReactBackspaceWatcher = reactBackspaceWatcher;
       mPreviousText = null;
     }
 
@@ -637,10 +640,7 @@ public class ReactTextInputManager extends BaseViewManager<ReactEditText, Layout
       // If the text is shorter we interpret as a backspace press (could also be a Cut from a
       // selection)
       if (diff < 0) {
-        mEventDispatcher.dispatchEvent(
-                new ReactKeyDownEvent(
-                        mEditText.getId(),
-                        "Backspace"));
+        mReactBackspaceWatcher.onBackspace();
       }
       Assertions.assertNotNull(mPreviousText);
       String newText = s.toString().substring(start, start + count);
@@ -690,12 +690,14 @@ public class ReactTextInputManager extends BaseViewManager<ReactEditText, Layout
   protected void addEventEmitters(
       final ThemedReactContext reactContext,
       final ReactEditText editText) {
-    editText.addTextChangedListener(new ReactTextInputTextWatcher(reactContext, editText));
+    final ReactBackspaceWatcher reactBackspaceWatcher = new ReactBackspaceWatcher(editText);
+    editText.addTextChangedListener(new ReactTextInputTextWatcher(reactContext, editText, reactBackspaceWatcher));
+    editText.setBackspaceWatcher(reactBackspaceWatcher);
     editText.setOnFocusChangeListener(
         new View.OnFocusChangeListener() {
           public void onFocusChange(View v, boolean hasFocus) {
-            EventDispatcher eventDispatcher =
-                reactContext.getNativeModule(UIManagerModule.class).getEventDispatcher();
+            final EventDispatcher eventDispatcher =
+              reactContext.getNativeModule(UIManagerModule.class).getEventDispatcher();
             if (hasFocus) {
               eventDispatcher.dispatchEvent(
                   new ReactTextInputFocusEvent(
@@ -843,6 +845,26 @@ public class ReactTextInputManager extends BaseViewManager<ReactEditText, Layout
         mPreviousHoriz = horiz;
         mPreviousVert = vert;
       }
+    }
+  }
+
+  private class ReactBackspaceWatcher implements BackspaceWatcher {
+
+    private ReactEditText mReactEditText;
+    private EventDispatcher mEventDispatcher;
+
+    public ReactBackspaceWatcher(ReactEditText reactEditText) {
+      mReactEditText = reactEditText;
+      ReactContext reactContext = (ReactContext) reactEditText.getContext();
+      mEventDispatcher = reactContext.getNativeModule(UIManagerModule.class).getEventDispatcher();
+    }
+
+    @Override
+    public void onBackspace() {
+      mEventDispatcher.dispatchEvent(
+        new ReactKeyDownEvent(
+          mReactEditText.getId(),
+          "Backspace"));
     }
   }
 
