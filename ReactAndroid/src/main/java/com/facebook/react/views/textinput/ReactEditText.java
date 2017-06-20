@@ -620,7 +620,7 @@ public class ReactEditText extends EditText {
   }
 
   /**
-   * Callback trigger when the callback function is pressed
+   * This callback will be called when the backspace button is pressed
    */
   public void setBackspaceWatcher(BackspaceWatcher backspaceWatcher) {
     mBackspaceWatcher = backspaceWatcher;
@@ -716,7 +716,7 @@ public class ReactEditText extends EditText {
   /**
    * Wrapper for the InputConnection object
    * It overrides only the deleteSurroundingText and sendKeyEvent. The backspace
-   * key will be intercept when the EditText is empty and trigger a callback
+   * key will be intercepted when the EditText is empty and trigger a callback
    */
   private class BackspaceInputConnectionWrapper extends InputConnectionWrapper {
 
@@ -746,12 +746,12 @@ public class ReactEditText extends EditText {
 
     @Override
     public boolean sendKeyEvent(KeyEvent event) {
-      /* Get only the up event for avoiding calling multiple times to the callback
-      ** check the length of the text before change to trigger the event only when the field is empty
-      ** If not is empty it will be trigger in the text watcher
+      /*
+      * check the length of the text before change to trigger the event only when the field is empty
+      * If not is empty it will be trigger in the text watcher.
       */
       if (event.getKeyCode() == KeyEvent.KEYCODE_DEL
-        && event.getAction() == KeyEvent.ACTION_UP
+        && event.getAction() == KeyEvent.ACTION_DOWN
         && mBackspaceWatcher != null
         && mPreviousText.length() == 0) {
           mBackspaceWatcher.onBackspace();
